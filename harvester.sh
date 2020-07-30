@@ -81,7 +81,6 @@ while true; do
   now=$(date)
   if grep "ListRecords" $dataPath/temp >/dev/null; then
     token=$(grep -Po "<resumptionToken[^>]*>\K([^<]*)" $dataPath/temp)
-    echo $token
     ((i += 1))
     if [ "$token" != "" ]; then
       cat $dataPath/temp >$dataPath/$i.xml
