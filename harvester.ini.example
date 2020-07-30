@@ -1,0 +1,4 @@
+;global|home dir|log
+global|/tmp/|/tmp/log/
+;source|id_prefix|oai_url|oai_metadataPrefix|oai_set
+300|mzk|https://aleph.mzk.cz/OAI|marc21|MZK01-CPK
