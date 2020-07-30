@@ -22,12 +22,20 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+if ! [ -f "$iniFile" ]; then
+    echo "ini file doesn't exists"
+    exit 1
+fi
+
 if grep "^global|" $iniFile >/dev/null; then
   globalIni=$(grep "^global|" $iniFile)
   IFS='|' read -ra global <<<"$globalIni"
   declare -A globalArr
   globalArr=([home_dir]=${global[1]} [log]=${global[2]})
   echo ${globalArr[home_dir]}
+else
+  echo "Missing global configuration"
+  exit 1
 fi
 
 if grep "^$inputSource|" $iniFile >/dev/null; then
@@ -38,6 +46,7 @@ if grep "^$inputSource|" $iniFile >/dev/null; then
   for key in "${!sourceArr[@]}"; do echo "$key=${sourceArr[$key]}"; done
 else
   printf "Unknown source $inputSource\n"
+  exit 1
 fi
 
 dataPath="${globalArr[home_dir]}/${sourceArr[source]}"
