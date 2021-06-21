@@ -14,6 +14,9 @@ while [ $# -gt 0 ]; do
   --repeat=*)
     repeat="${1#*=}"
     ;;
+  --resumptionToken=*)
+    resumptionToken="${1#*=}"
+    ;;
   *)
     printf "* Error: Invalid argument $1 *\n"
     exit 1
@@ -23,8 +26,8 @@ while [ $# -gt 0 ]; do
 done
 
 if ! [ -f "$iniFile" ]; then
-    echo "ini file doesn't exists"
-    exit 1
+  echo "ini file doesn't exists"
+  exit 1
 fi
 
 if grep "^global|" $iniFile >/dev/null; then
@@ -52,15 +55,25 @@ fi
 dataPath="${globalArr[home_dir]}/${sourceArr[source]}"
 log="${globalArr[log]}/${sourceArr[source]}.log"
 baseUrl="${sourceArr[url]}"
-url="$baseUrl?verb=ListRecords&set=${sourceArr[set]}&metadataPrefix=${sourceArr[metadataPrefix]}"
-
-if [ -d "$dataPath" ]; then
-  rm $dataPath/*
-else
-  mkdir $dataPath
-fi
 
 i=0
+
+if [ -z $resumptionToken ]; then
+  url="$baseUrl?verb=ListRecords&set=${sourceArr[set]}&metadataPrefix=${sourceArr[metadataPrefix]}"
+  if [ -d "$dataPath" ]; then
+    rm $dataPath/*
+  else
+    mkdir $dataPath
+  fi
+else
+  url="$baseUrl?verb=ListRecords&resumptionToken=$resumptionToken"
+  if [ -d "$dataPath" ]; then
+    i=$(ls $dataPath | grep -Po "[0-9]+(?=.xml)" | sort -g | tail -n1)
+  else
+    mkdir $dataPath
+  fi
+fi
+
 now=$(date)
 error=0
 echo "$now: Downloading URL: $url" >$log
