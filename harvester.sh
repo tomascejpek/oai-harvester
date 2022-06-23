@@ -17,6 +17,12 @@ while [ $# -gt 0 ]; do
   --resumptionToken=*)
     resumptionToken="${1#*=}"
     ;;
+  --from=*)
+    from="${1#*=}"
+    ;;
+  --to=*)
+    to="${1#*=}"
+    ;;
   *)
     printf "* Error: Invalid argument $1 *\n"
     exit 1
@@ -58,8 +64,14 @@ baseUrl="${sourceArr[url]}"
 
 i=0
 
+if [ -n "$from" ]; then
+  from="&from"=$from
+fi
+if [ -n "$to" ]; then
+  to="&until"=$to
+fi
 if [ -z $resumptionToken ]; then
-  url="$baseUrl?verb=ListRecords&set=${sourceArr[set]}&metadataPrefix=${sourceArr[metadataPrefix]}"
+  url="$baseUrl?verb=ListRecords&set=${sourceArr[set]}&metadataPrefix=${sourceArr[metadataPrefix]}$from$to"
   if [ -d "$dataPath" ]; then
     rm $dataPath/*
   else
