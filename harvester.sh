@@ -2,6 +2,8 @@
 
 iniFile="harvester.ini"
 repeat=false
+maxError=10
+sleep=60
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -24,7 +26,7 @@ while [ $# -gt 0 ]; do
     to="${1#*=}"
     ;;
   *)
-    printf "* Error: Invalid argument $1 *\n"
+    printf "* Error: Invalid argument %s *\n" "$1"
     exit 1
     ;;
   esac
@@ -36,6 +38,7 @@ if ! [ -f "$iniFile" ]; then
   exit 1
 fi
 
+# dest file & log
 if grep "^global|" $iniFile >/dev/null; then
   globalIni=$(grep "^global|" $iniFile)
   IFS='|' read -ra global <<<"$globalIni"
@@ -51,10 +54,10 @@ if grep "^$inputSource|" $iniFile >/dev/null; then
   sourceIni=$(grep "^$inputSource|" $iniFile)
   IFS='|' read -ra source <<<"$sourceIni"
   declare -A sourceArr
-  sourceArr=([source]=${source[0]} [prefix]=${source[1]} [url]=${source[2]} [metadataPrefix]=${source[3]} [set]=${source[4]})
+  sourceArr=([source]=${source[0]} [prefix]=${source[1]} [url]=${source[2]} [metadataPrefix]=${source[3]} [set]=${source[4]} [ictx]=${source[5]} [op]=${source[6]})
   for key in "${!sourceArr[@]}"; do echo "$key=${sourceArr[$key]}"; done
 else
-  printf "Unknown source $inputSource\n"
+  printf "Unknown source %s\n" "$inputSource"
   exit 1
 fi
 
@@ -63,22 +66,34 @@ log="${globalArr[log]}/${sourceArr[source]}.log"
 baseUrl="${sourceArr[url]}"
 
 i=0
+params=()
 
+params+=("verb=ListRecords")
 if [ -n "$from" ]; then
-  from="&from"=$from
+  params+=("from=$from")
 fi
 if [ -n "$to" ]; then
-  to="&until"=$to
+  params+=("until=$to")
 fi
+if [ -n "${sourceArr[ictx]}" ]; then
+  params+=("ictx=${sourceArr[ictx]}")
+fi
+if [ -n "${sourceArr[op]}" ]; then
+  params+=("op=${sourceArr[op]}")
+fi
+
 if [ -z $resumptionToken ]; then
-  url="$baseUrl?verb=ListRecords&set=${sourceArr[set]}&metadataPrefix=${sourceArr[metadataPrefix]}$from$to"
+  params+=("set=${sourceArr[set]}")
+  params+=("metadataPrefix=${sourceArr[metadataPrefix]}")
   if [ -d "$dataPath" ]; then
-    rm $dataPath/*
+    if [ "$(ls -A "$dataPath")" ]; then
+      rm $dataPath/*
+    fi
   else
     mkdir $dataPath
   fi
 else
-  url="$baseUrl?verb=ListRecords&resumptionToken=$resumptionToken"
+  params+=("resumptionToken=$resumptionToken")
   if [ -d "$dataPath" ]; then
     i=$(ls $dataPath | grep -Po "[0-9]+(?=.xml)" | sort -g | tail -n1)
   else
@@ -86,56 +101,59 @@ else
   fi
 fi
 
+url=$(printf "&%s" "${params[@]}")
+url=${url:1}
+url="$baseUrl?$url"
+
 now=$(date)
 error=0
-echo "$now: Downloading URL: $url" >$log
-curl -s -k $url >$dataPath/temp
 
+>"$dataPath"/temp # create or clean temp file
+first=1
 while true; do
   now=$(date)
-  if grep "ListRecords" $dataPath/temp >/dev/null; then
-    echo "ok" >>$log
-    break
-  else
-    echo "error" >>$log
-    if [ "$repeat" = true ] && [ $error -lt 3 ]; then
-      ((error += 1))
-      sleep 60
-    else
-      error=0
-      break
-    fi
-    now=$(date)
-    echo "$now: Downloading URL: $url" >>$log
-    curl -s -k $url >$dataPath/temp
-  fi
-done
-
-while true; do
-  now=$(date)
-  if grep "ListRecords" $dataPath/temp >/dev/null; then
+  if grep "<ListRecords" $dataPath/temp >/dev/null; then
     token=$(grep -Po "<resumptionToken[^>]*>\K([^<\s]*)" $dataPath/temp)
+
+    params=()
+    params+=("verb=ListRecords")
+    params+=("resumptionToken=$token")
+    if [ -n "${sourceArr[ictx]}" ]; then
+      params+=("ictx=${sourceArr[ictx]}")
+    fi
+    if [ -n "${sourceArr[op]}" ]; then
+      params+=("op=${sourceArr[op]}")
+    fi
+
+    url=$(printf "&%s" "${params[@]}")
+    url=${url:1}
+    url="$baseUrl?$url"
+
     ((i += 1))
     if [ "$token" != "" ]; then
       cat $dataPath/temp >$dataPath/$i.xml
-      echo "$now: $baseUrl?verb=ListRecords&resumptionToken=$token" >>$log
-      curl -s -k "$baseUrl?verb=ListRecords&resumptionToken=$token" >$dataPath/temp
+      echo "$now: $url" >>$log
+      curl -s -k "$url" >$dataPath/temp
     else
       cat $dataPath/temp >$dataPath/$i.xml
       break
     fi
   else
-    echo "error"
-    if [ "$repeat" = true ] && [ $error -lt 10 ]; then
-      ((error += 1))
-      sleep 60
+    if [ $first -eq 1 ]; then
+      first=0
     else
-      error=0
-      break
+      echo "$now: error - attempt: $(($error + 1)) / $maxError"
+      if [ "$repeat" = true ] && [ $error -lt $maxError ]; then
+        ((error += 1))
+        sleep $sleep
+      else
+        error=0
+        break
+      fi
     fi
     now=$(date)
-    echo "$now: $baseUrl?verb=ListRecords&resumptionToken=$token" >>$log
-    curl -s -k "$baseUrl?verb=ListRecords&resumptionToken=$token" >$dataPath/temp
+    echo "$now: $url" >>$log
+    curl -s -k "$url" >$dataPath/temp
   fi
 done
 
